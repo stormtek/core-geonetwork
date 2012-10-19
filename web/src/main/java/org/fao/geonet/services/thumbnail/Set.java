@@ -240,6 +240,70 @@ public class Set implements Service
 		return response;
 	}
 
+	public void addHarvested(Element params, ServiceContext context, Dbms dbms, DataManager dataMan) throws Exception
+        {
+            String  id            = Util.getParam     (params, Params.ID);
+            String  type          = Util.getParam     (params, Params.TYPE);
+            String  version       = Util.getParam     (params, Params.VERSION);
+            String  file          = Util.getParam     (params, Params.FNAME);
+            String  scalingDir    = Util.getParam     (params, Params.SCALING_DIR, "width");
+            boolean scaling       = Util.getParam     (params, Params.SCALING, false);
+            int     scalingFactor = Util.getParam     (params, Params.SCALING_FACTOR, 1);
+
+            boolean createSmall        = Util.getParam(params, Params.CREATE_SMALL,        false);
+            String  smallScalingDir    = Util.getParam(params, Params.SMALL_SCALING_DIR,   "");
+            int     smallScalingFactor = Util.getParam(params, Params.SMALL_SCALING_FACTOR, 0);
+		
+            String dataDir = Lib.resource.getDir(context, Params.Access.PUBLIC, id);
+            if (!new File(dataDir).mkdirs()) context.error("Failed to make dir: " + dataDir);
+		
+            //-----------------------------------------------------------------------
+            //--- create the small thumbnail, removing the old one
+
+            if (createSmall) {
+                String smallFile = getFileName(file, true);
+                String inFile    = context.getUploadDir() + file;
+                String outFile   = dataDir + smallFile;
+                removeOldThumbnail(context,dbms,id,"small");
+                createThumbnail(inFile, outFile, smallScalingFactor, smallScalingDir);
+                dataMan.setThumbnail(context, dbms, id, true, smallFile);
+            }
+
+            //-----------------------------------------------------------------------
+            //--- create the requested thumbnail
+            
+            removeOldThumbnail(context,dbms,id,type);
+
+            if (scaling) {
+                String newFile = getFileName(file, type.equals("small"));
+                String inFile  = context.getUploadDir() + file;
+                String outFile = dataDir + newFile;
+                
+                createThumbnail(inFile, outFile, scalingFactor, scalingDir);
+                if (!new File(inFile).delete()) context.error("Error while deleting thumbnail : "+inFile);
+                dataMan.setThumbnail(context, dbms, id, type.equals("small"), newFile);
+            } else {
+                //--- move uploaded file to destination directory
+                File inFile  = new File(context.getUploadDir(), file);
+                File outFile = new File(dataDir,                file);
+
+                try {
+                    FileUtils.moveFile(inFile, outFile);
+                } catch (Exception e) {
+                    inFile.delete();
+                    throw new Exception("Unable to move uploaded thumbnail to destination: " + outFile + ". Error: " + e.getMessage());
+                }
+			
+                dataMan.setThumbnail(context, dbms, id, type.equals("small"), file);
+            }
+        }
+        
+        public void removeHarvested(Element params, ServiceContext context, Dbms dbms) throws Exception {
+            String  id   = Util.getParam(params, Params.ID);
+            String  type = Util.getParam(params, Params.TYPE);
+            removeOldThumbnail(context,dbms,id,type);
+        }
+
 	//--------------------------------------------------------------------------
 	//---
 	//--- Private methods
